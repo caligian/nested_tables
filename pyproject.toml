@@ -1,0 +1,10 @@
+[project]
+name = 'nested_collections'
+version = '1.0'
+authors = [{name = "Krunal Pamkar", email="kpamkar@gmail.com"}]
+description = 'Simple package for handling nested collections'
+readme = 'README.md'
+requires-python = ">= 3.5"
+
+[project.urls]
+"Homepage" = "https://github.com/caligian/nested_collections"

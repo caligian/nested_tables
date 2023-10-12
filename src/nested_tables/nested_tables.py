@@ -1,13 +1,34 @@
-from collections.abc import Mapping, Sequence, MutableMapping, MutableSequence, Callable
+__all__ = [
+    "is_table",
+    "is_map",
+    "get_in",
+    "get_and_update_in",
+    "update_in",
+    "filter_map",
+    "grep",
+]
+
+from collections.abc import (
+    Mapping,
+    Sequence,
+    MutableMapping,
+    MutableSequence,
+    Callable,
+    Iterable,
+)
+
 from functools import reduce
 from typing import Any, Optional
 
+CondCallable = Callable[[Any], bool]
 MutTable = MutableSequence | MutableMapping
 Table = Sequence | Mapping
 Seq = Sequence
 Map = Mapping
 MutSeq = MutableSequence
 MutMap = MutableMapping
+DefaultCallable = Callable[[], Any]
+Transformer = Callable[[Any], Any] | Callable[[Any, Any], Any]
 
 
 def is_table(x: Table):
@@ -55,13 +76,13 @@ def put_key(x, key, value) -> bool:
     return True
 
 
-def get(
+def get_in(
     x: Table,
     keys: list,
-    default: Callable[[], Any] = lambda: None,
+    default: DefaultCallable = lambda: None,
     level=False,
-    update: Optional[Callable[[Any], Any]] = None,
-) -> Optional[Any | tuple[bool, Any, Any]]:
+    update: Optional[Transformer] = None,
+) -> Optional[Any | tuple[bool, Any, int, Table]]:
     y = x
     limit = len(keys) - 1
     i, k = None, None
@@ -71,7 +92,7 @@ def get(
 
         if not ok:
             if level:
-                return (False, i, k)
+                return (False, None, i, y)
             else:
                 return default()
         elif i == limit:
@@ -82,36 +103,33 @@ def get(
                     out = y[k]
 
             if level:
-                return (True, i, k)
+                return (True, out, i, y)
             else:
                 return out
         elif not is_table(out):
             if level:
-                return (False, i, k)
+                return (False, None, i, y)
             else:
                 return default()
         else:
             y = out
 
     if level:
-        return (False, i, k)
+        return (False, None, i, y)
     else:
         return default()
 
 
-def get_and_update(
-    x: MutTable, keys: list, value: Any, default=lambda: None, level=False
-) -> Any:
-    return get(x, keys, update=value, default=default, level=level)
+def get_and_update_in(x: MutTable, keys: list, value: Any, default=lambda: None, level=False) -> Any:
+    return get_in(x, keys, update=value, default=default, level=level)
 
 
-def update(
+def update_in(
     x: MutTable,
     keys: list,
     f: Callable[[Any], Any],
     force: bool = False,
-    default: Optional[Callable[[], Any]] = None,
-) -> bool | MutTable:
+    default: Optional[Callable[[], Any]] = None) -> bool | MutTable:
     mut = is_mut(x)
     if not mut:
         return False
@@ -124,19 +142,19 @@ def update(
         last = i
         ok, out = get_key(y, k)
 
-        if not ok:
+        if not ok or not is_mut(out):
             break
-        elif is_mut(out):
-            y = out
         else:
-            break
+            y = out
+
+    if i != len(keys) - 2 and not force:
+        return False
 
     for k in keys[last:-1]:
-        if force:
-            if not put_key(y, k, kind()):
-                return False
-            else:
-                y = y[k]
+        if not put_key(y, k, kind()):
+            return False
+        else:
+            y = y[k]
 
     match get_key(y, keys[-1]):
         case (True, v):
@@ -151,30 +169,82 @@ def update(
 
     return x
 
-def grep(cond: Callable[[Any], bool], X: tuple | list) -> tuple | list:
-    kind = type(X)
-    return kind(x for x in X if cond(x))
 
-def filtermap(f: Callable[[Any], Any],
-              X: tuple | list, 
-              cond: Callable[[Any], bool]=lambda x: x) -> tuple | list:
-    kind = type(X)
-    return kind(f(x) for x in X if cond(x))
+def grep(cond: CondCallable, xs: Iterable | Mapping) -> tuple | dict:
+    if is_map(xs):
+        res = {}
 
-def rpartial(f, *outer_args, **outer_kwargs):
-    def g(*args, **kwargs):
-        all_args =  list(args) + list(outer_args)
-        outer_kwargs.update(kwargs)
+        for k, v in xs.items(): 
+            if cond(k, v):
+                res[k] = v
 
-        return f(*all_args, **outer_kwargs)
+        return res
+    else:
+        return tuple(x for x in xs if cond(x))
 
-    return g
 
-def partial(f, *outer_args, **outer_kwargs):
-    def g(*args, **kwargs):
-        all_args = list(outer_args) + list(args)
-        kwargs.update(outer_kwargs)
+def filter_map(f: Transformer, 
+               xs: Iterable | Mapping, 
+               cond: CondCallable = lambda x: x) -> tuple | dict:
+    if is_map(xs):
+        res = {}
 
-        return f(*all_args, **kwargs)
+        for k, v in xs.items(): 
+            if cond(k, v):
+                res[k] = f(v)
 
-    return g
+        return res
+    else:
+        return tuple(f(x) for x in xs if cond(x))
+        
+
+def extend_in(xs: MutSeq, keys: list, *args) -> list | bool:
+    d: MutSeq
+    ok, out, _, d = get_in(xs, keys, level=True)
+
+    if not ok or not is_mut_seq(xs):
+        return False
+
+    for x in args:
+        if is_seq(x):
+            d.extend(x)
+        else:
+            d.append(x)
+
+    return d
+
+
+def append_in(xs: Sequence, keys: list, *args) -> MutSeq | bool:
+    ok, out, _, d = get_in(xs, keys, level=True)
+
+    if not ok or not is_mut_seq(d):
+        return False
+
+    for x in args:
+        d.append(x)
+
+    return d
+
+
+def pop_in(xs: Table, keys: list) -> tuple[Any, MutTable] | bool:
+    ok, out, _, d = get_in(xs, keys, level=True)
+
+    if not ok or (not is_mut_map(d) and not is_mut_seq(d)):
+        return False
+
+    last = keys[-1]
+
+    if is_map(d):
+        return d.pop(last)
+    else:
+        item = d.pop(last)
+        return (item, d)
+
+
+test = {'aa': {'b': {'c': {'d': [0]}}}}
+ks = ['aa', 'b', 'c', 'd', 0]
+ok, out, i, d = get_in(test, ks, level=True, update=lambda x: x * 10)
+
+print(append_in(test, ks, 1, 2, 3, 4))
+print(pop_in(test, ks))
+print(test)

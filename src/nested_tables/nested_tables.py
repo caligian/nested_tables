@@ -1,11 +1,15 @@
 __all__ = [
     "is_table",
     "is_map",
+    "is_seq",
     "get_in",
     "get_and_update_in",
     "update_in",
     "filter_map",
     "grep",
+    "append_in",
+    "pop_in",
+    "extend_in",
 ]
 
 from collections.abc import (
@@ -17,7 +21,6 @@ from collections.abc import (
     Iterable,
 )
 
-from functools import reduce
 from typing import Any, Optional
 
 CondCallable = Callable[[Any], bool]
@@ -63,7 +66,7 @@ def is_mut(x: Table) -> bool:
 def get_key(x: Table, key: Any):
     try:
         return (True, x[key])
-    except LookupError:
+    except:
         return (False, None)
 
 
@@ -78,7 +81,7 @@ def put_key(x, key, value) -> bool:
 
 def get_in(
     x: Table,
-    keys: list,
+    keys: list[Any],
     default: DefaultCallable = lambda: None,
     level=False,
     update: Optional[Transformer] = None,
@@ -120,41 +123,48 @@ def get_in(
         return default()
 
 
-def get_and_update_in(x: MutTable, keys: list, value: Any, default=lambda: None, level=False) -> Any:
+def get_and_update_in(
+    x: MutTable, keys: list[Any], value: Any, default=lambda: None, level=False
+) -> Optional[Any | tuple[bool, Any, int, Table]]:
     return get_in(x, keys, update=value, default=default, level=level)
 
 
 def update_in(
     x: MutTable,
-    keys: list,
+    keys: list[Any],
     f: Callable[[Any], Any],
     force: bool = False,
-    default: Optional[Callable[[], Any]] = None) -> bool | MutTable:
+    default: Optional[Callable[[], Any]] = None,
+) -> bool | MutTable:
     mut = is_mut(x)
+
     if not mut:
         return False
 
     y = x
     kind = type(x)
-    last = None
 
     for i, k in enumerate(keys[:-1]):
-        last = i
         ok, out = get_key(y, k)
 
-        if not ok or not is_mut(out):
-            break
+        if not ok:
+            if force:
+                if not put_key(y, k, kind()):
+                    return False
+                else:
+                    y = y[k]
+            else:
+                return False
+        elif not is_mut(out):
+            if force:
+                if not put_key(y, k, kind()):
+                    return False
+                else:
+                    y = y[k]
+            else:
+                return False
         else:
             y = out
-
-    if i != len(keys) - 2 and not force:
-        return False
-
-    for k in keys[last:-1]:
-        if not put_key(y, k, kind()):
-            return False
-        else:
-            y = y[k]
 
     match get_key(y, keys[-1]):
         case (True, v):
@@ -174,7 +184,7 @@ def grep(cond: CondCallable, xs: Iterable | Mapping) -> tuple | dict:
     if is_map(xs):
         res = {}
 
-        for k, v in xs.items(): 
+        for k, v in xs.items():
             if cond(k, v):
                 res[k] = v
 
@@ -183,26 +193,26 @@ def grep(cond: CondCallable, xs: Iterable | Mapping) -> tuple | dict:
         return tuple(x for x in xs if cond(x))
 
 
-def filter_map(f: Transformer, 
-               xs: Iterable | Mapping, 
-               cond: CondCallable = lambda x: x) -> tuple | dict:
+def filter_map(
+    f: Transformer, xs: Iterable | Mapping, cond: CondCallable = lambda x: x
+) -> tuple[Any] | dict:
     if is_map(xs):
         res = {}
 
-        for k, v in xs.items(): 
+        for k, v in xs.items():
             if cond(k, v):
                 res[k] = f(v)
 
         return res
     else:
         return tuple(f(x) for x in xs if cond(x))
-        
 
-def extend_in(xs: MutSeq, keys: list, *args) -> list | bool:
+
+def extend_in(xs: MutSeq, keys: list[Any], *args) -> list[Any] | bool:
     d: MutSeq
     ok, out, _, d = get_in(xs, keys, level=True)
 
-    if not ok or not is_mut_seq(xs):
+    if not ok or not is_mut_seq(d):
         return False
 
     for x in args:
@@ -214,7 +224,7 @@ def extend_in(xs: MutSeq, keys: list, *args) -> list | bool:
     return d
 
 
-def append_in(xs: Sequence, keys: list, *args) -> MutSeq | bool:
+def append_in(xs: Sequence, keys: list[Any], *args) -> MutSeq | bool:
     ok, out, _, d = get_in(xs, keys, level=True)
 
     if not ok or not is_mut_seq(d):
@@ -226,25 +236,16 @@ def append_in(xs: Sequence, keys: list, *args) -> MutSeq | bool:
     return d
 
 
-def pop_in(xs: Table, keys: list) -> tuple[Any, MutTable] | bool:
-    ok, out, _, d = get_in(xs, keys, level=True)
+def pop_in(xs: Table, keys: list[Any]) -> tuple[bool, MutTable | Any]:
+    ok, out, i, d = get_in(xs, keys, level=True)
 
     if not ok or (not is_mut_map(d) and not is_mut_seq(d)):
-        return False
+        return (False, i)
 
     last = keys[-1]
 
     if is_map(d):
-        return d.pop(last)
+        return (True, d.pop(last))
     else:
         item = d.pop(last)
-        return (item, d)
-
-
-test = {'aa': {'b': {'c': {'d': [0]}}}}
-ks = ['aa', 'b', 'c', 'd', 0]
-ok, out, i, d = get_in(test, ks, level=True, update=lambda x: x * 10)
-
-print(append_in(test, ks, 1, 2, 3, 4))
-print(pop_in(test, ks))
-print(test)
+        return (True, item)

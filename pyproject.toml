@@ -1,10 +1,19 @@
 [project]
-name = 'nested_collections'
+name = 'nested_tables'
 version = '1.0'
 authors = [{name = "Krunal Pamkar", email="kpamkar@gmail.com"}]
-description = 'Simple package for handling nested collections'
+description = 'elixir-esque utility functions for handling recursive sequences and mappings'
 readme = 'README.md'
 requires-python = ">= 3.5"
+license = {text = "MIT"}
 
 [project.urls]
-"Homepage" = "https://github.com/caligian/nested_collections"
+"Homepage" = "https://github.com/caligian/nested_tables"
+"Source" = "https://github.com/caligian/nested_tables"
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
+pythonpath = "src/nested_tables"
+
+[tool.setuptools.packages.find]
+where = ["src"]

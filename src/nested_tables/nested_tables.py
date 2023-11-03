@@ -1,3 +1,7 @@
+from collections import namedtuple
+
+TableInfo = namedtuple('TableInfo', ['ok', 'result', 'index', 'parent']) 
+
 __all__ = [
     "is_table",
     "is_map",
@@ -85,7 +89,7 @@ def get_in(
     default: DefaultCallable = lambda: None,
     level=False,
     update: Optional[Transformer] = None,
-) -> Optional[Any | tuple[bool, Any, int, Table]]:
+) -> Optional[Any | TableInfo]:
     y = x
     limit = len(keys) - 1
     i, k = None, None
@@ -95,7 +99,7 @@ def get_in(
 
         if not ok:
             if level:
-                return (False, None, i, y)
+                return TableInfo(False, None, i, y)
             else:
                 return default()
         elif i == limit:
@@ -106,26 +110,26 @@ def get_in(
                     out = y[k]
 
             if level:
-                return (True, out, i, y)
+                return TableInfo(True, out, i, y)
             else:
                 return out
         elif not is_table(out):
             if level:
-                return (False, None, i, y)
+                return TableInfo(False, None, i, y)
             else:
                 return default()
         else:
             y = out
 
     if level:
-        return (False, None, i, y)
+        return TableInfo(False, None, i, y)
     else:
         return default()
 
 
 def get_and_update_in(
     x: MutTable, keys: list[Any], value: Any, default=lambda: None, level=False
-) -> Optional[Any | tuple[bool, Any, int, Table]]:
+) -> Optional[Any | TableInfo]:
     return get_in(x, keys, update=value, default=default, level=level)
 
 

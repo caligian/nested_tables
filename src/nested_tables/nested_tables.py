@@ -7,8 +7,8 @@ __all__ = [
     "is_map",
     "is_seq",
     "get_in",
-    "get_and_update_in",
     "update_in",
+    "put_in",
     "filter_map",
     "grep",
     "append_in",
@@ -125,12 +125,6 @@ def get_in(
         return TableInfo(False, None, i, y)
     else:
         return default()
-
-
-def get_and_update_in(
-    x: MutTable, keys: list[Any], value: Any, default=lambda: None, level=False
-) -> Optional[Any | TableInfo]:
-    return get_in(x, keys, update=value, default=default, level=level)
 
 
 def update_in(
@@ -253,3 +247,7 @@ def pop_in(xs: Table, keys: list[Any]) -> tuple[bool, MutTable | Any]:
     else:
         item = d.pop(last)
         return (True, item)
+
+def put_in(xs: MutTable, ks: list[Any], **kwargs) -> Optional[Any | TableInfo]:
+    kwargs['force'] = True
+    return update_in(xs, ks, **kwargs)
